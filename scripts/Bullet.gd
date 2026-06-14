@@ -1,10 +1,10 @@
 extends Area2D
 class_name Bullet
 ## Bullet: small yellow 8x8 ColorRect.
-## Travels in a straight horizontal line and frees itself on impact
+## Travels in a straight line along `direction` and frees itself on impact
 ## or after a short lifetime (so stray bullets don't pile up forever).
 
-var direction: int = 1      # 1 = right, -1 = left (set by Player before adding to tree)
+var direction: Vector2 = Vector2.RIGHT  # normalized travel direction (set by Player before adding to tree)
 var speed: float = 700.0
 var damage: float = 10.0
 var size_mult: float = 1.0  # scales the bullet's visuals + collision shape
@@ -23,7 +23,7 @@ func _physics_process(delta: float) -> void:
 	if Engine.time_scale == 0.0:
 		return
 
-	position.x += direction * speed * delta
+	position += direction * speed * delta
 
 	_lifetime -= delta
 	if _lifetime <= 0.0:

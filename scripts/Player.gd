@@ -1,8 +1,8 @@
 extends CharacterBody2D
 class_name Player
 ## Player character: blue 32x64 ColorRect.
-## Controls: Left/Right arrows = move, Up arrow = jump, Space/Enter = shoot.
-## (these are Godot's built-in "ui_left", "ui_right", "ui_up", "ui_accept" actions)
+## Controls: A/D = move, W or Space = jump, hold Left Mouse Button = fire.
+## Aiming follows the mouse cursor in 360 degrees.
 
 # --- Core stats (shown in the Inspector, tweak to taste) -------------------
 @export var max_hp: float = 100.0
@@ -24,8 +24,8 @@ const GRAVITY: float = 1200.0
 const JUMP_VELOCITY: float = -450.0
 
 # --- Internal state -----------------------------------------------------------
-var facing_direction: int = 1   # 1 = right, -1 = left
 var _fire_cooldown: float = 0.0
+var _jump_was_pressed: bool = false
 
 const BULLET_SCENE: PackedScene = preload("res://scenes/Bullet.tscn")
 
@@ -52,39 +52,45 @@ func _physics_process(delta: float) -> void:
 
 	# --- Horizontal movement ---
 	var direction := 0
-	if Input.is_action_pressed("ui_left"):
+	if Input.is_physical_key_pressed(KEY_A):
 		direction -= 1
-	if Input.is_action_pressed("ui_right"):
+	if Input.is_physical_key_pressed(KEY_D):
 		direction += 1
 
 	if direction != 0:
 		velocity.x = direction * move_speed
-		facing_direction = direction
 	else:
 		velocity.x = move_toward(velocity.x, 0.0, move_speed)
 
-	# --- Jump ---
-	if Input.is_action_just_pressed("ui_up") and is_on_floor():
+	# --- Jump (W or Space, edge-triggered) ---
+	var jump_pressed := Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_SPACE)
+	if jump_pressed and not _jump_was_pressed and is_on_floor():
 		velocity.y = JUMP_VELOCITY
+	_jump_was_pressed = jump_pressed
 
 	move_and_slide()
 
-	# --- Shooting ---
+	# --- Shooting (360-degree aim, hold left mouse button to auto-fire) ---
 	_fire_cooldown -= delta
-	if Input.is_action_pressed("ui_accept") and _fire_cooldown <= 0.0:
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and _fire_cooldown <= 0.0:
 		_shoot()
 		_fire_cooldown = fire_rate
 
 
-## Spawns one or more bullets traveling in the direction the player is facing.
+## Spawns one or more bullets traveling from the player towards the mouse cursor.
 func _shoot() -> void:
+	var aim_direction := (get_global_mouse_position() - global_position).normalized()
+	if aim_direction == Vector2.ZERO:
+		aim_direction = Vector2.RIGHT
+
+	var perpendicular := Vector2(-aim_direction.y, aim_direction.x)
 	var spacing := 12.0
 	for i in range(bullet_count):
 		var bullet: Bullet = BULLET_SCENE.instantiate()
-		# Stack extra bullets vertically around the player's center.
-		var offset_y := (i - (bullet_count - 1) / 2.0) * spacing
-		bullet.global_position = global_position + Vector2(facing_direction * 24.0, offset_y)
-		bullet.direction = facing_direction
+		# Stack extra bullets side-by-side, perpendicular to the aim direction.
+		var offset := (i - (bullet_count - 1) / 2.0) * spacing
+		bullet.global_position = global_position + aim_direction * 24.0 + perpendicular * offset
+		bullet.direction = aim_direction
 		bullet.damage = damage
 		bullet.size_mult = bullet_size_mult
 		get_tree().current_scene.add_child(bullet)

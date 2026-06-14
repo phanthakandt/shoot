@@ -5,10 +5,9 @@ const ENEMY_SCENE: PackedScene = preload("res://scenes/Enemy.tscn")
 
 @export var spawn_interval: float = 2.0
 
-# Arena geometry constants (must match the Ground node in Main.tscn).
-const GROUND_TOP_Y: float = 680.0
-const ENEMY_HALF_HEIGHT: float = 16.0
-const EDGE_MARGIN: float = 20.0
+# Arena geometry constants.
+const EDGE_MARGIN: float = 20.0     # keep spawns this far from the screen's left/right edges
+const SPAWN_ABOVE_SCREEN: float = 40.0  # spawn this far above the top of the viewport
 
 @onready var spawn_timer: Timer = $SpawnTimer
 @onready var stats_label: Label = $HUD/StatsLabel
@@ -27,13 +26,13 @@ func _on_spawn_timer_timeout() -> void:
 	_spawn_enemy()
 
 
-## Spawns an enemy at the left or right edge of the screen, standing on the floor.
+## Spawns an enemy at a random horizontal position above the screen; it then
+## falls under gravity (see Enemy._physics_process) onto the ground or a platform.
 func _spawn_enemy() -> void:
 	var enemy: CharacterBody2D = ENEMY_SCENE.instantiate()
 	var viewport_width: float = get_viewport_rect().size.x
-	var spawn_from_left: bool = randi() % 2 == 0
-	var spawn_x: float = EDGE_MARGIN if spawn_from_left else viewport_width - EDGE_MARGIN
-	enemy.global_position = Vector2(spawn_x, GROUND_TOP_Y - ENEMY_HALF_HEIGHT)
+	var spawn_x: float = randf_range(EDGE_MARGIN, viewport_width - EDGE_MARGIN)
+	enemy.global_position = Vector2(spawn_x, -SPAWN_ABOVE_SCREEN)
 	add_child(enemy)
 
 
