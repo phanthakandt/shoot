@@ -1,0 +1,8 @@
+# Godot editor cache - regenerated automatically, not source.
+.godot/
+
+# Import metadata for binary assets.
+*.import
+
+# Godot 4.4+ resource UID sidecar files - tracked by the editor, noisy in diffs/search.
+*.uid

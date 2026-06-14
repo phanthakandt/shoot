@@ -1,0 +1,79 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/Main.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/Player.tscn" id="2"]
+[ext_resource type="PackedScene" path="res://scenes/LevelUpUI.tscn" id="3"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_ground"]
+size = Vector2(1280, 40)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_platform"]
+size = Vector2(220, 20)
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
+
+[node name="Ground" type="StaticBody2D" parent="."]
+position = Vector2(640, 700)
+collision_layer = 1
+collision_mask = 0
+
+[node name="ColorRect" type="ColorRect" parent="Ground"]
+offset_left = -640.0
+offset_top = -20.0
+offset_right = 640.0
+offset_bottom = 20.0
+color = Color(0.4, 0.4, 0.4, 1)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Ground"]
+shape = SubResource("RectangleShape2D_ground")
+
+[node name="Platform1" type="StaticBody2D" parent="."]
+position = Vector2(300, 500)
+collision_layer = 1
+collision_mask = 0
+
+[node name="ColorRect" type="ColorRect" parent="Platform1"]
+offset_left = -110.0
+offset_top = -10.0
+offset_right = 110.0
+offset_bottom = 10.0
+color = Color(0.4, 0.4, 0.4, 1)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Platform1"]
+shape = SubResource("RectangleShape2D_platform")
+
+[node name="Platform2" type="StaticBody2D" parent="."]
+position = Vector2(950, 380)
+collision_layer = 1
+collision_mask = 0
+
+[node name="ColorRect" type="ColorRect" parent="Platform2"]
+offset_left = -110.0
+offset_top = -10.0
+offset_right = 110.0
+offset_bottom = 10.0
+color = Color(0.4, 0.4, 0.4, 1)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Platform2"]
+shape = SubResource("RectangleShape2D_platform")
+
+[node name="Player" parent="." instance=ExtResource("2")]
+position = Vector2(640, 648)
+
+[node name="SpawnTimer" type="Timer" parent="."]
+wait_time = 2.0
+autostart = true
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="StatsLabel" type="Label" parent="HUD"]
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 320.0
+offset_bottom = 100.0
+theme_override_font_sizes/font_size = 20
+text = "HP: 100 / 100
+XP: 0 / 100"
+
+[node name="LevelUpUI" parent="." instance=ExtResource("3")]
