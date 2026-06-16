@@ -13,6 +13,7 @@ const HEALTH_BAR_WIDTH: float = 32.0
 const ABOVE_PLAYER_Y_OFFSET: float = 16.0  # how much higher than the player counts as "on a platform above"
 
 var current_hp: float = max_hp
+var _is_dead: bool = false            # guard against double-death in the same frame
 var _fallback_direction: float = 1.0  # used when directly above/below the player
 
 @onready var health_bar_fill: ColorRect = $HealthBarFill
@@ -66,6 +67,9 @@ func take_damage(amount: float) -> void:
 
 
 func _die() -> void:
+	if _is_dead:
+		return
+	_is_dead = true
 	var player: Player = GameManager.player
 	if is_instance_valid(player):
 		player.add_xp(xp_value)

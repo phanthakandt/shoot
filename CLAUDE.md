@@ -23,8 +23,12 @@ Every gameplay scene under `scenes/` is a thin `.tscn` wrapper around a same-nam
 - Aiming is 360-degree and follows the mouse: `_shoot()` computes `aim_direction = (get_global_mouse_position() - global_position).normalized()`.
 - **Normal attack** (left mouse button, hold to auto-fire): fires `bullet_count` bullets at `fire_rate`-second intervals. Extra bullets are spread perpendicular to the aim direction with 12 px spacing.
 - **Heavy attack** (right mouse button, `heavy_cooldown_max` = 10 s cooldown): fires a single `ExplosiveBullet`. A `HeavyBarFill` `ColorRect` above the player head shows cooldown progress (orange while charging, green when ready).
-- **Recoil system**: every normal shot applies `recoil_force` impulse opposite to aim direction (horizontal always; vertical only when aiming downward). Heavy attack multiplies force by 2× on floor, 4× in air. Recoil decays at `recoil_decay` units/sec each frame and is capped at `RECOIL_UPWARD_CAP` upward speed per frame.
+- **Recoil system**: every normal shot applies `recoil_force` impulse opposite to aim direction (horizontal always; vertical only when aiming downward). Heavy attack multiplies force by 2× on floor, 4× in air. Recoil is tracked in `_recoil: Vector2` and applied to `velocity` each physics frame after decaying.
+  - Horizontal recoil is clamped to `±RECOIL_HORIZONTAL_CAP` (540) each frame so rapid fire can't stack it indefinitely.
+  - When the player holds a direction key that opposes `_recoil.x`, horizontal decay is multiplied by `RECOIL_COUNTER_DECAY_MULT` (3×), so input can always fight back against recoil at any fire rate.
+  - Vertical (upward) recoil is capped at `RECOIL_UPWARD_CAP` (540) applied to `velocity.y`.
 - **Rise-height cap**: once the player is `MAX_RISE_HEIGHT` (130 px) above their last floor, all upward velocity and upward recoil are zeroed so they don't rocket off screen.
+- **Forced-fall timer**: `_airborne_timer` increments every frame the player is off the floor and resets on landing. Once it exceeds `MAX_AIRBORNE_TIME` (2 s), all upward recoil and upward velocity are zeroed each frame until the player lands, preventing indefinite hover via rapid downward-shot recoil.
 
 #### Roguelike stat modifiers (changed by level-up cards)
 | Field | Default | Effect |
@@ -64,6 +68,13 @@ Registered as a global singleton in `project.godot` (`[autoload]`). It's the hub
 | `max_hp_up` | Vitality | `max_hp += 25`, `current_hp += 25` |
 
 Pausing uses `Engine.time_scale = 0` (not `SceneTree.paused`), so every `_physics_process` in `Player.gd` / `Enemy.gd` / `Bullet.gd` / `ExplosiveBullet.gd` starts with `if Engine.time_scale == 0.0: return`. UI button presses still work while "paused" because input handling is unaffected by `time_scale`.
+
+### HUD (`scenes/Main.tscn` + `scripts/Main.gd`)
+The HUD lives in a `CanvasLayer` node named `HUD` inside `Main.tscn`. It uses the same `ColorRect` bar pattern as enemy health bars (background + fill pair), not Godot's `ProgressBar` control, so it matches the placeholder art style.
+
+- **HP bar**: `HPBarBg` (dark gray, 200×16 px) + `HPBarFill` on top; fill width = `200 * clamp(current_hp / max_hp, 0, 1)`. Color lerps green→yellow→red via `Color(1-ratio, ratio, 0, 1)`. A small `HPLabel` ("HP") sits to the left.
+- **XP bar**: `XPBarBg` (dark gray, 200×12 px) + `XPBarFill` (blue `Color(0.2, 0.5, 1, 1)`) below the HP bar; fill width = `200 * clamp(current_xp / xp_to_next_level, 0, 1)`. A small `XPLabel` ("XP") sits to the left.
+- `Main.gd` holds `@onready` refs to `HPBarFill` and `XPBarFill` and updates both via `size.x` in `_update_hud()`, called every `_process` frame.
 
 ### Physics collision layers
 A 4-layer scheme is shared across `Player.tscn`, `Bullet.tscn`, `ExplosiveBullet.tscn`, `Enemy.tscn`, and the `StaticBody2D` arena pieces in `Main.tscn`. If you change a layer/mask on one node, update its counterpart too or hit detection silently breaks:

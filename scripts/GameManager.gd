@@ -76,6 +76,7 @@ func _apply_extra_bullet(p: Player) -> void:
 func _apply_bullet_size_and_damage(p: Player) -> void:
 	p.damage *= 1.5
 	p.bullet_size_mult *= 1.5
+	p.heavy_damage *= 1.5
 
 
 func _apply_fire_rate(p: Player) -> void:
@@ -140,3 +141,8 @@ func select_card(card: Dictionary) -> void:
 
 	# Unpause.
 	Engine.time_scale = 1.0
+
+	# Handle back-to-back level-ups: re-check in case remaining XP crosses
+	# another threshold (e.g. a high-value kill landed while the card screen
+	# was open, or a single XP grant bridged two thresholds at once).
+	check_level_up()

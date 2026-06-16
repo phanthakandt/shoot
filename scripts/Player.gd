@@ -26,8 +26,11 @@ var bullet_size_mult: float = 1.0  # scales bullet size + is applied to damage
 # --- Movement constants ------------------------------------------------------
 const GRAVITY: float = 1200.0
 const JUMP_VELOCITY: float = -450.0
-const RECOIL_UPWARD_CAP: float = 540.0   # max upward speed recoil can give per-frame
-const MAX_RISE_HEIGHT: float = 130.0     # max px above last floor player can reach (normal jump ~84px)
+const RECOIL_UPWARD_CAP: float = 540.0        # max upward speed recoil can give per-frame
+const RECOIL_HORIZONTAL_CAP: float = 540.0    # max horizontal speed recoil can accumulate
+const RECOIL_COUNTER_DECAY_MULT: float = 3.0  # extra decay rate when holding against recoil
+const MAX_RISE_HEIGHT: float = 130.0       # max px above last floor player can reach (normal jump ~84px)
+const MAX_AIRBORNE_TIME: float = 2.0       # seconds before a forced fall kicks in
 const HEAVY_BAR_WIDTH: float = 32.0     # matches the player body width
 
 # --- Internal state -----------------------------------------------------------
@@ -36,6 +39,7 @@ var _heavy_cooldown_timer: float = 0.0
 var _jump_was_pressed: bool = false
 var _recoil: Vector2 = Vector2.ZERO
 var _last_floor_y: float = 0.0  # Y of the last surface the player stood on
+var _airborne_timer: float = 0.0
 
 const BULLET_SCENE: PackedScene = preload("res://scenes/Bullet.tscn")
 const EXPLOSIVE_BULLET_SCENE: PackedScene = preload("res://scenes/ExplosiveBullet.tscn")
@@ -59,9 +63,11 @@ func _physics_process(delta: float) -> void:
 	# --- Gravity ---
 	if not is_on_floor():
 		velocity.y += GRAVITY * delta
+		_airborne_timer += delta
 	else:
 		velocity.y = 0.0
 		_last_floor_y = global_position.y  # record height of current floor/platform
+		_airborne_timer = 0.0
 
 	# --- Horizontal movement ---
 	var direction := 0
@@ -82,7 +88,15 @@ func _physics_process(delta: float) -> void:
 	_jump_was_pressed = jump_pressed
 
 	# --- Recoil (decays each frame, then added to velocity before physics step) ---
-	_recoil = _recoil.move_toward(Vector2.ZERO, recoil_decay * delta)
+	# Holding a direction that opposes _recoil.x drains it faster, guaranteeing
+	# input can always fight back regardless of how fast recoil accumulates.
+	var opposing_input: bool = direction != 0 and sign(float(direction)) * sign(_recoil.x) < 0.0
+	var x_decay := recoil_decay * RECOIL_COUNTER_DECAY_MULT if opposing_input else recoil_decay
+	_recoil.x = move_toward(_recoil.x, 0.0, x_decay * delta)
+	_recoil.y = move_toward(_recoil.y, 0.0, recoil_decay * delta)
+	_recoil.x = clampf(_recoil.x, -RECOIL_HORIZONTAL_CAP, RECOIL_HORIZONTAL_CAP)
+	if _airborne_timer >= MAX_AIRBORNE_TIME:
+		_recoil.y = maxf(_recoil.y, 0.0)  # discard upward recoil before it reaches velocity
 	velocity += _recoil
 	velocity.y = maxf(velocity.y, -RECOIL_UPWARD_CAP)
 
@@ -91,6 +105,10 @@ func _physics_process(delta: float) -> void:
 	if global_position.y <= _last_floor_y - MAX_RISE_HEIGHT and velocity.y < 0.0:
 		velocity.y = 0.0
 		_recoil.y = maxf(_recoil.y, 0.0)  # discard accumulated upward recoil
+
+	# Forced fall after prolonged airtime: gravity wins, no recoil or input can sustain hover.
+	if _airborne_timer >= MAX_AIRBORNE_TIME:
+		velocity.y = maxf(velocity.y, 0.0)
 
 	move_and_slide()
 

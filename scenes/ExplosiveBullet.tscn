@@ -1,6 +1,6 @@
 [gd_scene load_steps=3 format=3]
 
-[ext_resource type="Script" path="res://scripts/ExplosiveBullet.gd" id="1"]
+[ext_resource type="Script" uid="uid://bb4npdo3nea8o" path="res://scripts/ExplosiveBullet.gd" id="1"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_explosive"]
 size = Vector2(16, 16)

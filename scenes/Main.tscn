@@ -95,13 +95,48 @@ autostart = true
 
 [node name="HUD" type="CanvasLayer" parent="." unique_id=1872144285]
 
-[node name="StatsLabel" type="Label" parent="HUD" unique_id=2093898990]
+[node name="HPLabel" type="Label" parent="HUD" unique_id=100000001]
 offset_left = 16.0
 offset_top = 16.0
-offset_right = 320.0
-offset_bottom = 100.0
-theme_override_font_sizes/font_size = 20
-text = "HP: 100 / 100
-XP: 0 / 100"
+offset_right = 52.0
+offset_bottom = 32.0
+theme_override_font_sizes/font_size = 14
+text = "HP"
+
+[node name="HPBarBg" type="ColorRect" parent="HUD" unique_id=100000002]
+offset_left = 56.0
+offset_top = 16.0
+offset_right = 256.0
+offset_bottom = 32.0
+color = Color(0.1, 0.1, 0.1, 1)
+
+[node name="HPBarFill" type="ColorRect" parent="HUD" unique_id=100000003]
+offset_left = 56.0
+offset_top = 16.0
+offset_right = 256.0
+offset_bottom = 32.0
+color = Color(0, 1, 0, 1)
+
+[node name="XPLabel" type="Label" parent="HUD" unique_id=100000004]
+offset_left = 16.0
+offset_top = 40.0
+offset_right = 52.0
+offset_bottom = 54.0
+theme_override_font_sizes/font_size = 14
+text = "XP"
+
+[node name="XPBarBg" type="ColorRect" parent="HUD" unique_id=100000005]
+offset_left = 56.0
+offset_top = 40.0
+offset_right = 256.0
+offset_bottom = 52.0
+color = Color(0.1, 0.1, 0.1, 1)
+
+[node name="XPBarFill" type="ColorRect" parent="HUD" unique_id=100000006]
+offset_left = 56.0
+offset_top = 40.0
+offset_right = 256.0
+offset_bottom = 52.0
+color = Color(0.2, 0.5, 1, 1)
 
 [node name="LevelUpUI" parent="." unique_id=1451137201 instance=ExtResource("3")]
