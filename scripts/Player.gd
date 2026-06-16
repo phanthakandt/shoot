@@ -10,6 +10,10 @@ class_name Player
 @export var fire_rate: float = 0.3      # seconds between shots (lower = faster)
 @export var damage: float = 10.0
 @export var contact_damage: float = 10.0  # damage taken per tick while touching an enemy
+@export var recoil_force: float = 150.0   # impulse per shot, applied opposite to aim direction
+@export var recoil_decay: float = 600.0   # units/sec rate at which recoil fades out
+@export var heavy_damage: float = 80.0    # explosion damage of the heavy attack
+@export var heavy_cooldown_max: float = 10.0  # seconds between heavy attacks
 
 # --- Runtime state (also visible to the card system) -----------------------
 var current_hp: float = max_hp
@@ -22,15 +26,23 @@ var bullet_size_mult: float = 1.0  # scales bullet size + is applied to damage
 # --- Movement constants ------------------------------------------------------
 const GRAVITY: float = 1200.0
 const JUMP_VELOCITY: float = -450.0
+const RECOIL_UPWARD_CAP: float = 540.0   # max upward speed recoil can give per-frame
+const MAX_RISE_HEIGHT: float = 130.0     # max px above last floor player can reach (normal jump ~84px)
+const HEAVY_BAR_WIDTH: float = 32.0     # matches the player body width
 
 # --- Internal state -----------------------------------------------------------
 var _fire_cooldown: float = 0.0
+var _heavy_cooldown_timer: float = 0.0
 var _jump_was_pressed: bool = false
+var _recoil: Vector2 = Vector2.ZERO
+var _last_floor_y: float = 0.0  # Y of the last surface the player stood on
 
 const BULLET_SCENE: PackedScene = preload("res://scenes/Bullet.tscn")
+const EXPLOSIVE_BULLET_SCENE: PackedScene = preload("res://scenes/ExplosiveBullet.tscn")
 
 @onready var hurt_box: Area2D = $HurtBox
 @onready var contact_damage_timer: Timer = $ContactDamageTimer
+@onready var heavy_bar_fill: ColorRect = $HeavyBarFill
 
 
 func _ready() -> void:
@@ -49,6 +61,7 @@ func _physics_process(delta: float) -> void:
 		velocity.y += GRAVITY * delta
 	else:
 		velocity.y = 0.0
+		_last_floor_y = global_position.y  # record height of current floor/platform
 
 	# --- Horizontal movement ---
 	var direction := 0
@@ -68,6 +81,17 @@ func _physics_process(delta: float) -> void:
 		velocity.y = JUMP_VELOCITY
 	_jump_was_pressed = jump_pressed
 
+	# --- Recoil (decays each frame, then added to velocity before physics step) ---
+	_recoil = _recoil.move_toward(Vector2.ZERO, recoil_decay * delta)
+	velocity += _recoil
+	velocity.y = maxf(velocity.y, -RECOIL_UPWARD_CAP)
+
+	# Hard height ceiling: once the player is MAX_RISE_HEIGHT above the last floor,
+	# kill all upward momentum so gravity can pull them back down.
+	if global_position.y <= _last_floor_y - MAX_RISE_HEIGHT and velocity.y < 0.0:
+		velocity.y = 0.0
+		_recoil.y = maxf(_recoil.y, 0.0)  # discard accumulated upward recoil
+
 	move_and_slide()
 
 	# --- Shooting (360-degree aim, hold left mouse button to auto-fire) ---
@@ -76,12 +100,29 @@ func _physics_process(delta: float) -> void:
 		_shoot()
 		_fire_cooldown = fire_rate
 
+	# --- Heavy attack (right mouse button, long cooldown) ---
+	_heavy_cooldown_timer = maxf(_heavy_cooldown_timer - delta, 0.0)
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and _heavy_cooldown_timer <= 0.0:
+		_shoot_heavy()
+		_heavy_cooldown_timer = heavy_cooldown_max
+
+	# --- Heavy attack progress bar (above player head) ---
+	var fill_ratio := clampf(1.0 - _heavy_cooldown_timer / heavy_cooldown_max, 0.0, 1.0)
+	heavy_bar_fill.size.x = HEAVY_BAR_WIDTH * fill_ratio
+	heavy_bar_fill.color = Color(0.0, 1.0, 0.0, 1.0) if _heavy_cooldown_timer <= 0.0 \
+			else Color(1.0, 0.55, 0.0, 1.0)
+
 
 ## Spawns one or more bullets traveling from the player towards the mouse cursor.
 func _shoot() -> void:
 	var aim_direction := (get_global_mouse_position() - global_position).normalized()
 	if aim_direction == Vector2.ZERO:
 		aim_direction = Vector2.RIGHT
+
+	# Horizontal recoil always; vertical only when shooting downward (aim_direction.y > 0).
+	_recoil.x += -aim_direction.x * recoil_force
+	if aim_direction.y > 0.0:
+		_recoil.y += -aim_direction.y * recoil_force
 
 	var perpendicular := Vector2(-aim_direction.y, aim_direction.x)
 	var spacing := 12.0
@@ -94,6 +135,27 @@ func _shoot() -> void:
 		bullet.damage = damage
 		bullet.size_mult = bullet_size_mult
 		get_tree().current_scene.add_child(bullet)
+
+
+## Fires an explosive bullet and applies heavy recoil.
+## On floor: 2× horizontal force only (ground absorbs vertical).
+## In air: 4× force in both axes for massive propulsion.
+func _shoot_heavy() -> void:
+	var aim_direction := (get_global_mouse_position() - global_position).normalized()
+	if aim_direction == Vector2.ZERO:
+		aim_direction = Vector2.RIGHT
+
+	var bullet: ExplosiveBullet = EXPLOSIVE_BULLET_SCENE.instantiate()
+	bullet.global_position = global_position + aim_direction * 30.0
+	bullet.direction = aim_direction
+	bullet.explosion_damage = heavy_damage
+	get_tree().current_scene.add_child(bullet)
+
+	var force_mult := 2.0 if is_on_floor() else 4.0
+	var heavy_force := recoil_force * force_mult
+	_recoil.x += -aim_direction.x * heavy_force
+	if aim_direction.y > 0.0 and not is_on_floor():
+		_recoil.y += -aim_direction.y * heavy_force
 
 
 ## Called by enemies (via the contact damage timer below).

@@ -3,7 +3,7 @@ extends Node2D
 
 const ENEMY_SCENE: PackedScene = preload("res://scenes/Enemy.tscn")
 
-@export var spawn_interval: float = 2.0
+@export var spawn_interval: float = 1.0
 
 # Arena geometry constants.
 const EDGE_MARGIN: float = 20.0     # keep spawns this far from the screen's left/right edges
