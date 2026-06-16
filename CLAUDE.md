@@ -16,13 +16,30 @@ This is a Godot project, not an npm/CLI project — there is no build step, lint
 ## Architecture
 
 ### Scene <-> script pairing
-Every gameplay scene under `scenes/` is a thin `.tscn` wrapper around a same-named script in `scripts/` (e.g. `scenes/Player.tscn` + `scripts/Player.gd`). `Player.gd` and `Bullet.gd` declare `class_name` (`Player`, `Bullet`) so other scripts can type-hint against them directly (e.g. `GameManager.player: Player`) without preloading.
+Every gameplay scene under `scenes/` is a thin `.tscn` wrapper around a same-named script in `scripts/` (e.g. `scenes/Player.tscn` + `scripts/Player.gd`). `Player.gd`, `Bullet.gd`, and `ExplosiveBullet.gd` declare `class_name` (`Player`, `Bullet`, `ExplosiveBullet`) so other scripts can type-hint against them without preloading.
 
 ### Player controls & shooting (`scripts/Player.gd`)
 - Movement: `A`/`D` (`Input.is_physical_key_pressed`) for left/right; `W` or `Space` to jump, edge-triggered via `_jump_was_pressed` and gated on `is_on_floor()`.
 - Aiming is 360-degree and follows the mouse: `_shoot()` computes `aim_direction = (get_global_mouse_position() - global_position).normalized()`.
-- Firing is full-auto: holding the left mouse button (`Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)`) fires repeatedly at `fire_rate`-second intervals via `_fire_cooldown`.
-- `Bullet.direction` is a normalized `Vector2` (set to `aim_direction`), and `Bullet._physics_process` moves it by `direction * speed * delta` — bullets travel in any direction, not just left/right.
+- **Normal attack** (left mouse button, hold to auto-fire): fires `bullet_count` bullets at `fire_rate`-second intervals. Extra bullets are spread perpendicular to the aim direction with 12 px spacing.
+- **Heavy attack** (right mouse button, `heavy_cooldown_max` = 10 s cooldown): fires a single `ExplosiveBullet`. A `HeavyBarFill` `ColorRect` above the player head shows cooldown progress (orange while charging, green when ready).
+- **Recoil system**: every normal shot applies `recoil_force` impulse opposite to aim direction (horizontal always; vertical only when aiming downward). Heavy attack multiplies force by 2× on floor, 4× in air. Recoil decays at `recoil_decay` units/sec each frame and is capped at `RECOIL_UPWARD_CAP` upward speed per frame.
+- **Rise-height cap**: once the player is `MAX_RISE_HEIGHT` (130 px) above their last floor, all upward velocity and upward recoil are zeroed so they don't rocket off screen.
+
+#### Roguelike stat modifiers (changed by level-up cards)
+| Field | Default | Effect |
+|---|---|---|
+| `bullet_count` | 1 | Bullets fired per shot |
+| `bullet_size_mult` | 1.0 | Scales bullet `ColorRect` + damage multiplier |
+
+### Bullet (`scripts/Bullet.gd`)
+Travels in a straight line (`direction * speed * delta`). On `_ready()` scales `self.scale` by `size_mult` so child `ColorRect` and `CollisionShape2D` both scale uniformly. Frees itself after a 2-second lifetime or on hitting an enemy/`StaticBody2D`.
+
+### ExplosiveBullet (`scripts/ExplosiveBullet.gd`)
+Heavy-attack projectile (`speed` 500, lifetime 3 s). On impact (enemy or `StaticBody2D`) calls `_explode()`:
+- Runs a `PhysicsShapeQueryParameters2D` circle query (`radius` = 100 px, mask = 4 / Enemy layer) and calls `take_damage(explosion_damage)` on every collider in range.
+- Spawns a temporary orange `ColorRect` flash node (size = 2× radius, 0.15 s lifetime) as a visual.
+- A `_exploded` guard prevents double-detonation if multiple bodies trigger `body_entered` in the same frame.
 
 ### Enemy AI (`scripts/Enemy.gd`)
 - Chases the player's X position: `dir_x = sign(player.global_position.x - global_position.x)`.
@@ -35,26 +52,35 @@ Registered as a global singleton in `project.godot` (`[autoload]`). It's the hub
 - `GameManager.player` — set by `Player._ready()`; read by `Enemy` (AI targeting, XP grants) and `Main` (HUD).
 - `GameManager.level_up_ui` — set by `LevelUpUI._ready()`.
 - Owns the **card database** (`Array[Dictionary]`, each `{id, name, description, effect}`, where `effect` is a `Callable` that mutates a `Player`'s stats) and the level-up flow:
-  `Player.add_xp()` -> `check_level_up()` -> `_trigger_level_up()` (sets `Engine.time_scale = 0`, picks 3 random cards, shows `LevelUpUI`) -> `select_card()` (applies the chosen effect, multiplies `xp_to_next_level` by `XP_SCALING`, sets `Engine.time_scale = 1`).
+  `Player.add_xp()` -> `check_level_up()` -> `_trigger_level_up()` (sets `Engine.time_scale = 0`, picks 3 random cards, shows `LevelUpUI`) -> `select_card()` (applies the chosen effect, multiplies `xp_to_next_level` by `XP_SCALING` = 1.5, sets `Engine.time_scale = 1`).
 
-Pausing uses `Engine.time_scale = 0` (not `SceneTree.paused`), so every `_physics_process` in `Player.gd` / `Enemy.gd` / `Bullet.gd` starts with `if Engine.time_scale == 0.0: return`. UI button presses still work while "paused" because input handling is unaffected by `time_scale`.
+#### Card database (5 cards)
+| id | Name | Effect |
+|---|---|---|
+| `move_speed_up` | Swift Boots | `move_speed *= 1.2` |
+| `extra_bullet` | Twin Shot | `bullet_count += 1` |
+| `heavy_rounds` | Heavy Rounds | `damage *= 1.5`, `bullet_size_mult *= 1.5` |
+| `fire_rate_up` | Quick Trigger | `fire_rate *= 0.75` (smaller = faster) |
+| `max_hp_up` | Vitality | `max_hp += 25`, `current_hp += 25` |
+
+Pausing uses `Engine.time_scale = 0` (not `SceneTree.paused`), so every `_physics_process` in `Player.gd` / `Enemy.gd` / `Bullet.gd` / `ExplosiveBullet.gd` starts with `if Engine.time_scale == 0.0: return`. UI button presses still work while "paused" because input handling is unaffected by `time_scale`.
 
 ### Physics collision layers
-A 4-layer scheme is shared across `Player.tscn`, `Bullet.tscn`, `Enemy.tscn`, and the `StaticBody2D` arena pieces in `Main.tscn`. If you change a layer/mask on one node, update its counterpart too or hit detection silently breaks:
+A 4-layer scheme is shared across `Player.tscn`, `Bullet.tscn`, `ExplosiveBullet.tscn`, `Enemy.tscn`, and the `StaticBody2D` arena pieces in `Main.tscn`. If you change a layer/mask on one node, update its counterpart too or hit detection silently breaks:
 
 | Layer (bit) | Value | Used by |
 |---|---|---|
 | 1 World  | 1 | Ground/platforms (`StaticBody2D`); Player & Enemy `collision_mask` (floor collision) |
 | 2 Player | 2 | Player body |
-| 3 Enemy  | 4 | Enemy body; Player's `HurtBox` mask; Bullet mask |
-| 4 Bullet | 8 | Bullet area |
+| 3 Enemy  | 4 | Enemy body; Player's `HurtBox` mask; Bullet mask; ExplosiveBullet shape query mask |
+| 4 Bullet | 8 | Bullet area; ExplosiveBullet area |
 
 - Player and Enemy bodies only physically collide with World (layer 1) — they pass through each other physically.
 - Player's `HurtBox` (Area2D, mask 4) detects Enemy bodies for contact damage, polled every tick by `ContactDamageTimer`.
-- Bullet (layer 8, mask 5 = World|Enemy) frees itself via `body_entered` on hitting a `StaticBody2D` or a node in the `"enemies"` group.
+- Bullet and ExplosiveBullet (layer 8, mask 5 = World|Enemy) free themselves via `body_entered` on hitting a `StaticBody2D` or an enemy.
 
 ### Groups
-`Enemy._ready()` adds itself to the `"enemies"` group. `Bullet` and `Player`'s `HurtBox` use `is_in_group("enemies")` / `has_method("take_damage")` to identify enemies generically rather than type-checking.
+`Enemy._ready()` adds itself to the `"enemies"` group. `Bullet`, `ExplosiveBullet`, and Player's `HurtBox` use `is_in_group("enemies")` / `has_method("take_damage")` to identify enemies generically rather than type-checking.
 
 ### Enemy spawning & arena boundaries
 `Main.gd`'s `_spawn_enemy()` picks a random X across the viewport width (inset by `EDGE_MARGIN`) and spawns the enemy `SPAWN_ABOVE_SCREEN` pixels above the top of the screen. Enemies then fall under gravity (`Enemy._physics_process`) and land on whichever platform or the `Ground` is below their spawn X.
