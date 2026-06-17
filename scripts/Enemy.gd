@@ -1,20 +1,22 @@
 extends CharacterBody2D
-## Enemy: red 32x32 ColorRect.
-## Walks toward the player's X position. Falls to the floor with gravity.
-## If standing on a platform above the player, walks off the edge instead
-## of stalling directly overhead. Dies (and grants XP) when its HP reaches 0.
+class_name Enemy
+## Base class for all enemies.
+## Owns health, death, XP grant, health-bar update, and the physics loop
+## structure. Subclasses override the virtual hooks below to implement their
+## specific movement, AI, and on-death behaviour.
 
+## Maximum hit points. Set on the scene root or via apply_difficulty().
 @export var max_hp: float = 30.0
+## Movement speed in pixels/sec; used by subclass AI.
 @export var move_speed: float = 80.0
+## XP awarded to the player on death.
 @export var xp_value: float = 20.0
 
 const GRAVITY: float = 1200.0
-const HEALTH_BAR_WIDTH: float = 32.0
-const ABOVE_PLAYER_Y_OFFSET: float = 16.0  # how much higher than the player counts as "on a platform above"
 
 var current_hp: float = max_hp
-var _is_dead: bool = false            # guard against double-death in the same frame
-var _fallback_direction: float = 1.0  # used when directly above/below the player
+var _is_dead: bool = false
+var _health_bar_max_width: float = 0.0
 
 @onready var health_bar_fill: ColorRect = $HealthBarFill
 
@@ -22,46 +24,61 @@ var _fallback_direction: float = 1.0  # used when directly above/below the playe
 func _ready() -> void:
 	current_hp = max_hp
 	add_to_group("enemies")
-	_fallback_direction = -1.0 if randf() < 0.5 else 1.0
+	_health_bar_max_width = health_bar_fill.size.x
+	_enemy_ready()
 
 
 func _physics_process(delta: float) -> void:
 	if Engine.time_scale == 0.0:
 		return
+	_apply_gravity(delta)
+	_update_ai(delta)
+	move_and_slide()
 
-	# Gravity, so enemies spawned mid-air land on the arena floor.
+
+# ---------------------------------------------------------------------------
+# Virtual hooks — override in subclasses as needed.
+# ---------------------------------------------------------------------------
+
+## Called from _ready() for per-instance setup (e.g. randomising direction).
+func _enemy_ready() -> void:
+	pass
+
+
+## Override to implement custom gravity or none (e.g. flying enemies).
+## Default: standard downward gravity, zeroed on floor contact.
+func _apply_gravity(delta: float) -> void:
 	if not is_on_floor():
 		velocity.y += GRAVITY * delta
 	else:
 		velocity.y = 0.0
 
-	var player: Player = GameManager.player
-	if is_instance_valid(player):
-		var dir_x: float
-		# Smaller Y = higher up. If standing on a platform above the player,
-		# ignore their X and keep walking the current direction to walk off
-		# the edge instead of stalling on top of them.
-		if is_on_floor() and global_position.y <= player.global_position.y - ABOVE_PLAYER_Y_OFFSET:
-			dir_x = sign(velocity.x)
-		else:
-			# Normal AI: walk toward the player's horizontal position.
-			dir_x = sign(player.global_position.x - global_position.x)
 
-		# sign() returns 0 when stationary or directly above/below the player,
-		# which would stall the enemy forever, so fall back to a fixed direction.
-		if dir_x == 0.0:
-			dir_x = _fallback_direction
-		velocity.x = dir_x * move_speed
-	else:
-		velocity.x = 0.0
-
-	move_and_slide()
+## Override to implement movement / attack AI. Called every physics frame.
+func _update_ai(_delta: float) -> void:
+	pass
 
 
-## Called by Bullet on hit.
+## Called right before queue_free() in _die(). Override for on-death effects.
+func _on_death() -> void:
+	pass
+
+
+# ---------------------------------------------------------------------------
+# Public API (called by spawner, bullets, and player).
+# ---------------------------------------------------------------------------
+
+## Called by the spawner immediately after instantiation to apply wave scaling.
+## Override to customise difficulty scaling per enemy type.
+func apply_difficulty(difficulty: float) -> void:
+	max_hp *= 1.0 + difficulty * 0.3
+	move_speed += difficulty * 8.0
+
+
+## Called by Bullet / ExplosiveBullet on hit (duck-typed, signature must not change).
 func take_damage(amount: float) -> void:
 	current_hp -= amount
-	health_bar_fill.size.x = HEALTH_BAR_WIDTH * clampf(current_hp / max_hp, 0.0, 1.0)
+	health_bar_fill.size.x = _health_bar_max_width * clampf(current_hp / max_hp, 0.0, 1.0)
 	if current_hp <= 0.0:
 		_die()
 
@@ -73,4 +90,5 @@ func _die() -> void:
 	var player: Player = GameManager.player
 	if is_instance_valid(player):
 		player.add_xp(xp_value)
+	_on_death()
 	queue_free()

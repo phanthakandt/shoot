@@ -29,9 +29,9 @@ const JUMP_VELOCITY: float = -450.0
 const RECOIL_UPWARD_CAP: float = 540.0        # max upward speed recoil can give per-frame
 const RECOIL_HORIZONTAL_CAP: float = 540.0    # max horizontal speed recoil can accumulate
 const RECOIL_COUNTER_DECAY_MULT: float = 3.0  # extra decay rate when holding against recoil
-const MAX_RISE_HEIGHT: float = 130.0       # max px above last floor player can reach (normal jump ~84px)
+const MAX_RISE_HEIGHT: float = 260.0       # max px above last floor player can reach (normal jump ~84px)
 const MAX_AIRBORNE_TIME: float = 2.0       # seconds before a forced fall kicks in
-const HEAVY_BAR_WIDTH: float = 32.0     # matches the player body width
+const HEAVY_BAR_WIDTH: float = 32.0        # matches the player body width
 
 # --- Internal state -----------------------------------------------------------
 var _fire_cooldown: float = 0.0
@@ -40,6 +40,7 @@ var _jump_was_pressed: bool = false
 var _recoil: Vector2 = Vector2.ZERO
 var _last_floor_y: float = 0.0  # Y of the last surface the player stood on
 var _airborne_timer: float = 0.0
+var _has_died: bool = false
 
 const BULLET_SCENE: PackedScene = preload("res://scenes/Bullet.tscn")
 const EXPLOSIVE_BULLET_SCENE: PackedScene = preload("res://scenes/ExplosiveBullet.tscn")
@@ -157,7 +158,7 @@ func _shoot() -> void:
 
 ## Fires an explosive bullet and applies heavy recoil.
 ## On floor: 2× horizontal force only (ground absorbs vertical).
-## In air: 4× force in both axes for massive propulsion.
+## In air: 4× force in both axes for massive proaapulsion.
 func _shoot_heavy() -> void:
 	var aim_direction := (get_global_mouse_position() - global_position).normalized()
 	if aim_direction == Vector2.ZERO:
@@ -190,6 +191,9 @@ func add_xp(amount: float) -> void:
 
 
 func _die() -> void:
+	if _has_died:
+		return
+	_has_died = true
 	print("Player died! Pausing game.")
 	Engine.time_scale = 0.0
 
