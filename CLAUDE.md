@@ -27,7 +27,7 @@ Every gameplay scene under `scenes/` is a thin `.tscn` wrapper around a same-nam
   - Horizontal recoil is clamped to `±RECOIL_HORIZONTAL_CAP` (540) each frame so rapid fire can't stack it indefinitely.
   - When the player holds a direction key that opposes `_recoil.x`, horizontal decay is multiplied by `RECOIL_COUNTER_DECAY_MULT` (3×), so input can always fight back against recoil at any fire rate.
   - Vertical (upward) recoil is capped at `RECOIL_UPWARD_CAP` (540) applied to `velocity.y`.
-- **Rise-height cap**: once the player is `MAX_RISE_HEIGHT` (260 px) above their last floor, all upward velocity and upward recoil are zeroed. 260 px allows skipping ~3 platforms in one bound (3×80=240 px) while preventing infinite vertical flight. `_last_floor_y` resets on every landing, so the cap is always measured from the most recent surface.
+- **Rise-height cap**: once the player is `MAX_RISE_HEIGHT` (130 px) above their last floor, all upward velocity and upward recoil are zeroed. This prevents infinite vertical flight while allowing a modest recoil-boosted jump. `_last_floor_y` resets on every landing.
 - **Forced-fall timer**: `_airborne_timer` increments every frame the player is off the floor and resets on landing. Once it exceeds `MAX_AIRBORNE_TIME` (2 s), all upward recoil and upward velocity are zeroed each frame until the player lands, preventing indefinite hover via rapid downward-shot recoil.
 
 #### Roguelike stat modifiers (changed by level-up cards)
@@ -99,6 +99,18 @@ The HUD lives in a `CanvasLayer` node named `HUD` inside `Main.tscn`. It uses th
 - **XP bar**: `XPBarBg` (dark gray, 200×12 px) + `XPBarFill` (blue `Color(0.2, 0.5, 1, 1)`) below the HP bar; fill width = `200 * clamp(current_xp / xp_to_next_level, 0, 1)`. A small `XPLabel` ("XP") sits to the left.
 - `Main.gd` holds `@onready` refs to `HPBarFill` and `XPBarFill` and updates both via `size.x` in `_update_hud()`, called every `_process` frame.
 
+### Static arena (`scenes/Main.tscn`)
+The arena is a fixed 1280×720 viewport — no camera scrolling.
+
+- **Ground**: `StaticBody2D` at (640, 700), 1280×40 px gray `ColorRect` + `CollisionShape2D`. Full-width floor across the bottom of the screen.
+- **Platform1**: `StaticBody2D` at (300, 500), 220×20 px. Left-side mid-height platform.
+- **Platform2**: `StaticBody2D` at (950, 380), 220×20 px. Right-side upper platform.
+- **LeftWall / RightWall**: `StaticBody2D` nodes at x=−10 and x=1290, 720 px tall (matching the viewport), keeping the player and enemies inside the arena horizontally.
+- All arena `StaticBody2D` nodes use `collision_mask = 0` (they don't move, so they don't need to sense anything).
+
+### Enemy spawning
+`Main.gd`'s `_spawn_enemy()` filters `ENEMY_TYPES` to entries whose `min_difficulty` is ≤ the current difficulty, then picks one by weight. It calls `enemy.apply_difficulty(diff)` on the instance before `add_child()`, then positions the enemy `SPAWN_ABOVE_SCREEN (40 px)` above Y=0 (the top of the fixed viewport) at a random X within the arena. Walker enemies fall under gravity onto the ground or a platform; flying enemies fly directly toward the player.
+
 ### Physics collision layers
 A 4-layer scheme is shared across `Player.tscn`, `Bullet.tscn`, `ExplosiveBullet.tscn`, `Enemy.tscn`, and the `StaticBody2D` arena pieces in `Main.tscn`. If you change a layer/mask on one node, update its counterpart too or hit detection silently breaks:
 
@@ -115,37 +127,3 @@ A 4-layer scheme is shared across `Player.tscn`, `Bullet.tscn`, `ExplosiveBullet
 
 ### Groups
 `Enemy._ready()` adds itself to the `"enemies"` group. `Bullet`, `ExplosiveBullet`, and Player's `HurtBox` use `is_in_group("enemies")` / `has_method("take_damage")` to identify enemies generically rather than type-checking.
-
-### Climbing arena — camera, platforms, death (`scripts/Platform.gd` + `scenes/Platform.tscn`)
-
-The arena is an **infinite vertical climber**: the player jumps upward through stationary platforms while a ratchet camera tracks their ascent.
-
-**Camera ratchet** (Camera2D child of Main, driven by `Main.gd`):
-- Every `_process` frame: `_camera_y = min(_camera_y, player.y - VERTICAL_LEAD)`. Y only ever decreases (camera only scrolls up, never back down).
-- `VERTICAL_LEAD = 200 px` → player appears at screen y = 560/720 (78% from top), showing ≈ 560 px of level ahead.
-- Horizontal position fixed at x = 640 (arena center).
-
-**Platforms** (`scenes/Platform.tscn`, `scripts/Platform.gd`):
-- Plain `StaticBody2D`, `collision_layer = 1`, `collision_mask = 0`.
-- Width exported (`@export var width: float = 270.0`); `_ready()` resizes the `ColorRect` offsets and allocates a fresh `RectangleShape2D` (not the shared scene resource) to avoid shared-resource mutation.
-- `platform.width` is set by the spawner right after `instantiate()`, before `add_child()`.
-
-**Platform generator** (`Main.gd`):
-- `_highest_platform_y` tracks the world Y of the topmost spawned platform. Lower values = higher platforms.
-- `_generate_platforms()` runs every `_process` frame: while `_highest_platform_y > camera_top - GENERATE_AHEAD_MARGIN (400 px)`, spawns a new platform above at a random gap of 100–150 px.
-- Platform gap reachability: base jump height ≈ 84 px; all gaps (100–150 px) require a recoil boost from a downward shot while airborne. `MAX_RISE_HEIGHT = 260 px` comfortably covers the full gap range while preventing indefinite flight.
-- Platform width is 700–940 px (nearly full arena width), keeping the landing area generous regardless of horizontal position.
-- Horizontal X is constrained to `±MAX_HORIZONTAL_JUMP_DELTA (150 px)` of the previous platform, clamped to wall margins + half-width, ensuring the next platform is always reachable.
-- At startup `_prefill_platforms()` immediately fills the visible viewport plus `GENERATE_AHEAD_MARGIN`, with the first platform force-placed at x=640 directly under the player's feet (player center y + player_half (32) + platform_half (10) = y+42).
-- Platforms join the `"platforms"` group; `_cleanup_nodes()` frees any whose `global_position.y > camera_bottom + CLEANUP_MARGIN_BELOW (300 px)`.
-
-**Walls:** `LeftWall`/`RightWall` in `Main.tscn` are `StaticBody2D` nodes at x=−10 and x=1290, 100,000 px tall (centered at y=0, covering y=−50000 to y=50000 — far beyond any realistic session). The player and enemies can never walk off the horizontal edges.
-
-**Fall death** (in `Main.gd`, not `Player.gd`):
-- `_check_fall_death()` compares `player.global_position.y > camera_bottom + FALL_DEATH_MARGIN (300 px)`.
-- Calls `player._die()`, which is guarded by `_has_died: bool` so it fires exactly once. Death from zero HP (`take_damage`) also uses the same guard.
-
-### Enemy spawning & arena boundaries
-`Main.gd`'s `_spawn_enemy()` filters `ENEMY_TYPES` to entries whose `min_difficulty` is ≤ the current difficulty, then picks one by weight. It calls `enemy.apply_difficulty(diff)` on the instance before `add_child()`, then positions it `SPAWN_ABOVE_SCREEN (40 px)` above the **camera's current top edge** (not a fixed viewport Y). Walker enemies fall under gravity onto whatever platform is below; flying enemies fly directly toward the player.
-
-Both platforms and enemies are culled by `_cleanup_nodes()` in `Main.gd` when they drift more than `CLEANUP_MARGIN_BELOW (300 px)` below the camera's bottom edge. Enemy.gd no longer contains any viewport-based `queue_free()` logic.

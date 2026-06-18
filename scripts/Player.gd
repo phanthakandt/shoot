@@ -29,7 +29,7 @@ const JUMP_VELOCITY: float = -450.0
 const RECOIL_UPWARD_CAP: float = 540.0        # max upward speed recoil can give per-frame
 const RECOIL_HORIZONTAL_CAP: float = 540.0    # max horizontal speed recoil can accumulate
 const RECOIL_COUNTER_DECAY_MULT: float = 3.0  # extra decay rate when holding against recoil
-const MAX_RISE_HEIGHT: float = 260.0       # max px above last floor player can reach (normal jump ~84px)
+const MAX_RISE_HEIGHT: float = 130.0       # max px above last floor player can reach (normal jump ~84px)
 const MAX_AIRBORNE_TIME: float = 2.0       # seconds before a forced fall kicks in
 const HEAVY_BAR_WIDTH: float = 32.0        # matches the player body width
 
